@@ -1,6 +1,7 @@
 #ifndef DYNAMIC_CAMERA_H
 #define DYNAMIC_CAMERA_H
 
+#include <algorithm>
 #include <iostream>
 #include <limits>
 
@@ -37,16 +38,29 @@ struct DynamicCamera {
                 const sf::Vector2f& trackedPosWorld,      // world coords of player to track
                 const sf::Vector2f& trackedVelocityWorld  // world velocity of player to track
     ) {
-        // TODO: (HINTS/outline)
-        // collect statistics on the player position and velocity in (normalized, if you like)
-        // window coordinates. Compute lookAhead distance in world coords, adjusting for
-        // if the player is moving left or right.
-        // Now update lookAhead state using an EMA over its previous state and the lookAhead world
-        // vector. Then determine if the player is in the dead zone, soft rejection zone, or hard
-        // rejection zone. For each, perform EMA on the delta of the camera displacement (ignoring
-        // lookahead) appropriately. Next,
-        // set the camera center by offsetting the cameraUnadjustedCenter, combining lookAhead.
-        // Finally update cameraUnadjustedCenter, but without lookahead.
+        camera.setCameraCenter(cameraUnadjustedCenter);
+        float playerWindowPercentX = camera.worldToWindowPercent(trackedPosWorld).x;
+
+        float lookAheadWorldX = 0.f;
+        if (trackedVelocityWorld.x > 0.f) {
+            lookAheadWorldX = camera.windowPercentToWorldDist({lookAhead, 0.f}).x;
+        } else if (trackedVelocityWorld.x < 0.f) {
+            lookAheadWorldX = -camera.windowPercentToWorldDist({lookAhead, 0.f}).x;
+        }
+        lookaheadState += alpha * (lookAheadWorldX - lookaheadState);
+
+        float targetWindowPercentX = std::clamp(playerWindowPercentX, deadZoneX.min, deadZoneX.max);
+        float zoneAlpha = alpha;
+        if (!softZoneX.contains(playerWindowPercentX)) {
+            targetWindowPercentX = std::clamp(playerWindowPercentX, softZoneX.min, softZoneX.max);
+            zoneAlpha = 1.f;
+        }
+        float deltaWindowPercentX = zoneAlpha * (playerWindowPercentX - targetWindowPercentX);
+        sf::Vector2f deltaWorld = camera.windowPercentToWorldDist({deltaWindowPercentX, 0.f});
+
+        camera.setCameraCenter(cameraUnadjustedCenter + deltaWorld +
+                               sf::Vector2f{lookaheadState, 0.f});
+        cameraUnadjustedCenter += deltaWorld;
     }
 
     float alpha;  // alpha to use for damping of camera position, *as well as* for smoothing of
